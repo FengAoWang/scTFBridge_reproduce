@@ -68,15 +68,13 @@ TF_name = open(TF_name, 'r').readlines()
 for i in range(len(TF_name)):
     TF_name[i] = TF_name[i].replace('\n', '')
 
-# adata = sc.concat((rna_adata, atac_data), axis=0)
-# print(adata.var.columns)
-TF_list = ['RUNX1', 'STAT1', 'IRF1', 'CTCF', 'REST', 'SPl1']
+
 adata_multiomics_processing([rna_adata, atac_data],
                             [f'filter_data/{dataset}/RNA_filter.h5ad',
                              f'filter_data/{dataset}/ATAC_filter.h5ad',
                              f'filter_data/{dataset}/TF_filter.h5ad',
                              f'filter_data/{dataset}/batch_info.csv'],
-                            2000, 0.01, TF_name, TF_list)
+                            2000, 0.01, TF_name)
 
 rna_adata = anndata.read_h5ad(f'filter_data/{dataset}/RNA_filter.h5ad')
 five_fold_split_dataset(rna_adata, f'filter_data/{dataset}/fold_split_info.csv')

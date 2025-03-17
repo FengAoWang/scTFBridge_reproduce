@@ -53,7 +53,7 @@ def adata_processing(adata, output_path: list, top_gene_num, peak_percent):
     batch_info_df.to_csv(output_path[2], index=True)
 
 
-def adata_multiomics_processing(adata, output_path: list, top_gene_num, peak_percent, TFName, TF_list):
+def adata_multiomics_processing(adata, output_path: list, top_gene_num, peak_percent, TFName):
 
 
     # batch_dims = one_hot_encoded_batches.shape[1]
@@ -86,7 +86,7 @@ def adata_multiomics_processing(adata, output_path: list, top_gene_num, peak_per
     sc.pp.highly_variable_genes(tf_data, n_top_genes=128, subset=True)
     # tf_data.var.reset_index(drop=True, inplace=True)
 
-    n = len(TF_list)
+    # n = len(TF_list)
     # 替换最后 n 个特征名称为 TF_list 中的对应值
     # tf_data.var_names.values[-n:] = TF_list
     print(tf_data.var)
