@@ -20,8 +20,6 @@ dataset_name = 'GSE241468'
 #
 atac_data = anndata.read_h5ad(f'filter_data/{dataset_name}/ATAC_filter.h5ad')
 TF_data = anndata.read_h5ad(f'filter_data/{dataset_name}/TF_filter.h5ad')
-# print(atac_data.var.shape)
-# print(atac_data.var)
 
 Element_name = atac_data.var.index
 
@@ -29,7 +27,7 @@ Element_name = atac_data.var.index
 Element_name = Element_name.str.replace('-', ':', 1)
 
 pd.DataFrame(Element_name).to_csv('Peaks.txt',header=None,index=None)
-print(Element_name)
+
 GRNdir = 'GRN/data_bulk/'
 
 Match2 = pd.read_csv(GRNdir + 'Match2.txt', sep='\t')
@@ -37,9 +35,6 @@ Match2 = Match2.values
 
 motifWeight = pd.read_csv(GRNdir + 'motifWeight.txt', index_col=0, sep='\t')
 
-# TFName = pd.read_csv(GRNdir + 'TFName.txt', header=None)
-# TFName.columns = ['TFName']
-# TFName = TFName['TFName'].values
 TFName = TF_data.var.index.values
 
 outdir = f'./{dataset_name}_TF_Binding/'

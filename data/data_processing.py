@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/home/wfa/project/single_cell_multimodal')
-from utils.data_processing import adata_processing, five_fold_split_dataset, adata_multiomics_processing
+from utils.data_processing import five_fold_split_dataset, adata_multiomics_processing
 import anndata
 import scanpy as sc
 
@@ -59,22 +59,9 @@ cell_types_annotations = [
 
 
 
-
 dataset = 'GSE243917'
 rna_adata = anndata.read_h5ad(f'filter_data/{dataset}/GSE243917_genesXcells_ALL_batch.h5ad')
 atac_data = anndata.read_h5ad(f'filter_data/{dataset}/GSE243917_peaksXcells_ALL_batch.h5ad')
-
-# rna_adata.obs['CellType_annotated'] = [
-#     cell_types_annotations[cell_type_idx] for cell_type_idx in rna_adata.obs['CellType']
-# ]
-#
-# atac_data.obs['CellType_annotated'] = [
-#     cell_types_annotations[cell_type_idx] for cell_type_idx in atac_data.obs['CellType']
-# ]
-# rna_adata.obs['batch'] = rna_adata.obs['orig.ident']
-# atac_data.obs['batch'] = atac_data.obs['orig.ident']
-
-print(rna_adata.var)
 
 TF_name = '../data/GRN/data_bulk/TFName.txt'
 TF_name = open(TF_name, 'r').readlines()
