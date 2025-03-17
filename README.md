@@ -43,8 +43,8 @@ Note: PyPI package coming soon. Stay tuned for updates
 ## GRN 
 
 ## Data Preparation
-Here, we provide a demo
-
+Here, we provide a demo to pre-process the single cell multi-omics dataset
+### Dataset filtering
 ```bash
 from utils.data_processing import five_fold_split_dataset, adata_multiomics_processing
 import anndata
@@ -72,6 +72,32 @@ adata_multiomics_processing([rna_adata, atac_data],
 rna_adata = anndata.read_h5ad(f'filter_data/{dataset}/RNA_filter.h5ad')
 five_fold_split_dataset(rna_adata, f'filter_data/{dataset}/fold_split_info.csv')
 ```
+### Prepare TF-Motif Binding file
+```bash
+dataset_name = 'GSE243917'
+#
+atac_data = anndata.read_h5ad(f'filter_data/{dataset_name}/ATAC_filter.h5ad')
+TF_data = anndata.read_h5ad(f'filter_data/{dataset_name}/TF_filter.h5ad')
+
+Element_name = atac_data.var.index
+
+pd.DataFrame(Element_name).to_csv('Peaks.txt',header=None,index=None)
+
+GRNdir = 'GRN/data_bulk/'
+
+Match2 = pd.read_csv(GRNdir + 'Match2.txt', sep='\t')
+Match2 = Match2.values
+
+motifWeight = pd.read_csv(GRNdir + 'motifWeight.txt', index_col=0, sep='\t')
+
+TFName = TF_data.var.index.values
+
+outdir = f'./{dataset_name}_TF_Binding/'
+
+extract_overlap_regions('hg38', GRNdir, outdir, 'LINGER')
+load_TFbinding(GRNdir, motifWeight, Match2, TFName, Element_name, outdir)
+```
+
 
 ## License
 
