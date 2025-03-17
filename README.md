@@ -4,13 +4,13 @@
 
 scTFBridge is a novel single-cell multi-omics integration method designed for modality disentanglement and gene regulatory network (GRN) inference. It leverages transcription factor (TF)-motif binding information to model complex regulatory relationships in single-cell data, enabling researchers to uncover insights into gene regulation across multiple omics layers.
 
+![scTFBridge Overview](figure1.png) <!
 
 ## Table of Contents
 - [Installation](#installation)
 - [Data Preparation](#data-preparation)
-- [Training and GRN inference](#model-architecture)
-- [License](#license)
-- [Citing](#citing)
+- [Training and GRN inference](#training-and-grn-inference)
+- [Tutorials](#tutorials)
 ---
 
 ## Installation
@@ -38,12 +38,11 @@ Note: PyPI package coming soon. Stay tuned for updates
 
 ```
 
-## Tutorials
 
-## GRN 
+
 
 ## Data Preparation
-Here, we provide a demo to pre-process the single cell multi-omics dataset
+Here, we provide a demo to preprocess and train scTFBridge using a single-cell multi-omics dataset. The rheumatoid arthritis multi-omics dataset used in this demo is publicly available on the GEO database under accession code GSE243917.
 ### Dataset filtering
 ```bash
 from utils.data_processing import five_fold_split_dataset, adata_multiomics_processing
@@ -98,8 +97,49 @@ extract_overlap_regions('hg38', GRNdir, outdir, 'LINGER')
 load_TFbinding(GRNdir, motifWeight, Match2, TFName, Element_name, outdir)
 ```
 
+## Training and GRN inference
 
-## License
+### loading GEX ATAC adata
+```bash
+dataset_name = 'GSE243917'
+gex_data = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/RNA_filter.h5ad')
+atac_adata = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/ATAC_filter.h5ad')
+TF_adata = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/TF_filter.h5ad')
+
+TF_length = TF_adata.var.shape[0]
+
+fold_split_info = pd.read_csv(f'../data/filter_data/{dataset_name}/fold_split_info.csv')
+mask = pd.read_csv(f'../data/{dataset_name}_TF_Binding/TF_binding.txt', sep='\t', header=None).values
+```
+
+### loading scTFBridge
+```bash
+mask_tensor = torch.tensor(mask).float()
+scTFBridge_demo = scMulti([dim1, dim2], [1024], [1024], TF_dim, 1, ['gaussian', 'bernoulli'], batch_dims, 1, mask_tensor)
+```
+The training process can be found in train/train_demo.py, then you will get the trained model for GRN inference.
 
 
-## Citing
+### GRN inference
+construct explain model
+```bash
+from model.scTFBridge import scMulti, explainModelLatentZ
+
+sc_multi_demo = scMulti([dim1, dim2], [1024], [1024],
+                        128, 1, ['gaussian', 'bernoulli'], batch_dims, 1, mask_tensor)
+model_dict = torch.load(f'model_dict/sc_multi_{dataset_name}_fold{fold}.pt', map_location='cpu')
+sc_multi_demo.load_state_dict(model_dict)
+sc_multi_demo.cuda()
+sc_multi_demo.eval()
+sc_multi_demo.latent_mode = 'latent_z'
+
+explain_model = explainModelLatentZ(sc_multi_demo, 'rna', 128, 0)
+explain_model.eval()
+explain_model.cuda()
+```
+The more details can be found at train/explain_TF.py
+## Tutorials
+Tutorials will be available soon.
+
+
+
