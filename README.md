@@ -4,7 +4,7 @@
 
 scTFBridge is a novel single-cell multi-omics integration method designed for modality disentanglement and gene regulatory network (GRN) inference. It leverages transcription factor (TF)-motif binding information to model complex regulatory relationships in single-cell data, enabling researchers to uncover insights into gene regulation across multiple omics layers.
 
-![scTFBridge Overview](figure1.png) <!
+![scTFBridge Overview](figure1.png)
 
 ## Table of Contents
 - [Installation](#installation)
