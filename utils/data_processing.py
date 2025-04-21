@@ -81,7 +81,7 @@ def adata_multiomics_processing(adata, output_path: list, top_gene_num, peak_per
     # Step 3: Replace 'inf' values with 0 in the sparse matrix
     tf_data.X.data[tf_mask] = 0
 
-    sc.pp.normalize_total(tf_data, target_sum=1e5)
+    sc.pp.normalize_total(tf_data, target_sum=1e4)
     sc.pp.log1p(tf_data)
     sc.pp.highly_variable_genes(tf_data, n_top_genes=128, subset=True)
     # tf_data.var.reset_index(drop=True, inplace=True)
@@ -117,7 +117,7 @@ def adata_multiomics_processing(adata, output_path: list, top_gene_num, peak_per
     gex_data.X.data[mask] = 0  # 或者你想要的其他替换值
     gex_data.X.data[np.isnan(gex_data.X.data)] = 0  # 填充NaN为0
 
-    sc.pp.normalize_total(gex_data, target_sum=1e5)
+    sc.pp.normalize_total(gex_data, target_sum=1e4)
     sc.pp.log1p(gex_data)
     sc.pp.highly_variable_genes(gex_data, n_top_genes=top_gene_num, subset=True)
 
