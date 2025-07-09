@@ -3,14 +3,13 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 import sys
-sys.path.append('/home/wfa/project/single_cell_multimodal')
+sys.path.append('/data2/wfa/project/single_cell_multimodal')
 import scanpy as sc
 import anndata
-from model.scTFBridge import scMulti
 from dataset.dataset import scMultiDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from model.scTFBridge import scMulti, calculate_r_squared_torch
+from model.scTFBridge import scTFBridge, calculate_r_squared_torch, calculate_pcc_torch
 import time
 import episcanpy.api as epi
 import numpy as np
@@ -24,7 +23,10 @@ from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.metrics import r2_score
 import ast
 import torch.multiprocessing as mp
+import os
 
+current_dir = os.getcwd()
+print(f"Current working directory: {current_dir}")
 
 def set_seed(seed):
     import os
@@ -38,13 +40,6 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
     torch.set_float32_matmul_precision('high')
 
-
-# Function to compute mutual information
-# def compute_mutual_information(x, y):
-#     x = x.numpy()
-#     y = y.numpy()
-#     mi = mutual_info_score(x.ravel(), y.ravel())
-#     return mi
 
 
 # 计算两个嵌入矩阵之间的互信息
@@ -86,77 +81,28 @@ def compute_mutual_information_tensor(embedding1, embedding2, bins=30):
 set_seed(3407)
 
 
-def TFIDF(count_mat):
-    """
-    TF-IDF transformation for matrix.
 
-    Parameters
-    ----------
-    count_mat
-        numpy matrix with cells as rows and peak as columns, cell * peak.
-
-    Returns
-    ----------
-    tfidf_mat
-        matrix after TF-IDF transformation.
-
-    divide_title
-        matrix divided in TF-IDF transformation process, would be used in "inverse_TFIDF".
-
-    multiply_title
-        matrix multiplied in TF-IDF transformation process, would be used in "inverse_TFIDF".
-
-    """
-
-    count_mat = count_mat.T
-    divide_title = np.tile(np.sum(count_mat, axis=0), (count_mat.shape[0], 1))
-    nfreqs = 1.0 * count_mat / divide_title
-    multiply_title = np.tile(np.log(1 + 1.0 * count_mat.shape[1] / np.sum(count_mat, axis=1)).reshape(-1, 1),
-                             (1, count_mat.shape[1]))
-    tfidf_mat = scipy.sparse.csr_matrix(np.multiply(nfreqs, multiply_title)).T
-    return tfidf_mat, divide_title, multiply_title
-
-
-def inverse_TFIDF(TDIDFed_mat, divide_title, multiply_title, max_temp):
-    """
-    Inversed TF-IDF transformation for matrix.
-
-    Parameters
-    ----------
-    TDIDFed_mat: csr_matrix
-        matrix after TFIDF transformation with peaks as rows and cells as columns, peak * cell.
-
-    divide_title: numpy matrix
-        matrix divided in TF-IDF transformation process, could get from "ATAC_data_preprocessing".
-
-    multiply_title: numpy matrix
-        matrix multiplied in TF-IDF transformation process, could get from "ATAC_data_preprocessing".
-
-    max_temp: float
-        max scale factor divided in ATAC preprocessing, could get from "ATAC_data_preprocessing".
-
-    Returns
-    ----------
-    count_mat: csr_matrix
-        recovered count matrix from matrix after TFIDF transformation.
-    """
-
-    count_mat = TDIDFed_mat.T
-    count_mat = count_mat * max_temp
-    nfreqs = np.divide(count_mat, multiply_title)
-    count_mat = np.multiply(nfreqs, divide_title).T
-    return count_mat
 
 # loading GEX ATAC adata
-dataset_name = 'GSE243917'
+dataset_name = 'human_PBMC'
+training_mode = 'no_prior_strain'
+cell_key = 'cell_type'
+
+common_TG = pd.read_csv('/data2/ycx/LINGER/data/TG/common_TG_new.csv')['TG'].values.tolist()
+# print('common TG', common_TG)
+
 gex_data = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/RNA_filter.h5ad')
+# gex_data = gex_data[:, gex_data.var_names.isin(common_TG)]
+print(gex_data)
+
+
 atac_adata = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/ATAC_filter.h5ad')
 TF_adata = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/TF_filter.h5ad')
 
 TF_length = TF_adata.var.shape[0]
 
 fold_split_info = pd.read_csv(f'../data/filter_data/{dataset_name}/fold_split_info.csv')
-mask = pd.read_csv(f'../data/{dataset_name}_TF_Binding/TF_binding.txt', sep='\t', header=None).values
+mask = pd.read_csv(f'../data/filter_data/{dataset_name}/TF_binding/TF_binding.txt', sep='\t', header=None).values
 
 if 'batch' in gex_data.obs.columns:
     batches_info = gex_data.obs['batch'].values.tolist()
@@ -231,7 +177,7 @@ def scDM_training(fold: int, device_id: int):
     print(sc_dataset[0][0], sc_dataset[0][1])
     print(sc_dataset[0][0].shape, sc_dataset[0][1].shape)
 
-    sc_dataloader = DataLoader(sc_dataset, batch_size=512, shuffle=True, num_workers=8, pin_memory=True)
+    sc_dataloader = DataLoader(sc_dataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=True)
     val_dataloader = DataLoader(val_sc_dataset, batch_size=512, shuffle=False, num_workers=8, pin_memory=True)
     test_dataloader = DataLoader(test_sc_dataset, batch_size=512, shuffle=False, num_workers=8, pin_memory=True)
 
@@ -240,6 +186,7 @@ def scDM_training(fold: int, device_id: int):
     TF_dim = TF_adata.X.shape[1]
 
     mask_tensor = torch.tensor(mask).float()
+    one_mask_tensor = torch.ones_like(mask_tensor)
 
     # mask_tensor_ = torch.ones_like(mask_tensor)
     # 计算最小值和最大值
@@ -249,10 +196,10 @@ def scDM_training(fold: int, device_id: int):
     # 进行全局归一化
     normalized_mask_tensor = (mask_tensor - min_val) / (max_val - min_val)
 
-    sc_multi_demo = scMulti([dim1, dim2], [1024], [1024],
-                            TF_dim, 1, ['gaussian', 'bernoulli'], batch_dims, 1, mask_tensor)
+    sc_multi_demo = scTFBridge([dim1, dim2], [1024], [1024],
+                               TF_dim, 0.1, ['gaussian', 'bernoulli'], batch_dims, 1, 1, one_mask_tensor)
 
-    epochs = 100
+    epochs = 150
     best_val_loss = float('inf')
     patience = 10  # 设定 early stopping 的 patience
     no_improve_epochs = 0
@@ -260,6 +207,7 @@ def scDM_training(fold: int, device_id: int):
 
     sc_multi_demo.cuda()
     sc_multi_demo.train()
+    
     optimizer = torch.optim.Adam(sc_multi_demo.parameters(), lr=1e-3)
 
     for epoch in range(epochs):
@@ -313,7 +261,7 @@ def scDM_training(fold: int, device_id: int):
 
     #   start eval
     sc_multi_demo.load_state_dict(best_model_dict)
-    torch.save(best_model_dict, f'model_dict/sc_multi_{dataset_name}_fold{fold}.pt')
+    torch.save(best_model_dict, f'model_dict/sc_multi_{dataset_name}_{training_mode}_fold{fold}.pt')
     torch.cuda.empty_cache()
     sc_multi_demo.eval()
     latent_representations = torch.Tensor([])
@@ -336,10 +284,10 @@ def scDM_training(fold: int, device_id: int):
 
                 output = sc_multi_demo([rna_data, atac_data, TF_data], batch_id)
                 share_embedding = output['share_embedding'].cpu()
-                rna_embedding = output['rna_private_embedding'].cpu()
-                atac_embedding = output['atac_private_embedding'].cpu()
-                rna_share = output['rna_share_embedding'].cpu()
-                atac_share = output['atac_share_embedding'].cpu()
+                rna_embedding = output['RNA_private_embedding'].cpu()
+                atac_embedding = output['ATAC_private_embedding'].cpu()
+                rna_share = output['RNA_share_embedding'].cpu()
+                atac_share = output['ATAC_share_embedding'].cpu()
 
                 latent_representations = torch.cat((latent_representations, share_embedding), dim=0)
                 rna_representations = torch.cat((rna_representations, rna_embedding), dim=0)
@@ -405,10 +353,10 @@ def scDM_training(fold: int, device_id: int):
     sc.tl.leiden(gex_data_recon)
     # sc.tl.louvain(gex_data)
 
-    ARI = metrics.adjusted_rand_score(gex_data_recon.obs['cell_type'], gex_data_recon.obs['leiden'])
-    AMI = metrics.adjusted_mutual_info_score(gex_data_recon.obs['cell_type'], gex_data_recon.obs['leiden'])
-    NMI = metrics.normalized_mutual_info_score(gex_data_recon.obs['cell_type'], gex_data_recon.obs['leiden'])
-    HOM = metrics.homogeneity_score(gex_data_recon.obs['cell_type'], gex_data_recon.obs['leiden'])
+    ARI = metrics.adjusted_rand_score(gex_data_recon.obs[cell_key], gex_data_recon.obs['leiden'])
+    AMI = metrics.adjusted_mutual_info_score(gex_data_recon.obs[cell_key], gex_data_recon.obs['leiden'])
+    NMI = metrics.normalized_mutual_info_score(gex_data_recon.obs[cell_key], gex_data_recon.obs['leiden'])
+    HOM = metrics.homogeneity_score(gex_data_recon.obs[cell_key], gex_data_recon.obs['leiden'])
 
     print('\nrecon RNA')
     print('ARI', ARI)
@@ -424,30 +372,26 @@ def scDM_training(fold: int, device_id: int):
     actual_rna = test_gex_adata.X.toarray()
     reconstructed_rna = all_recon_rna.detach().cpu().numpy()
 
-    average_r2 = calculate_r_squared_torch(torch.from_numpy(actual_rna), torch.from_numpy(reconstructed_rna))
+    average_pcc = calculate_pcc_torch(torch.from_numpy(actual_rna), torch.from_numpy(reconstructed_rna))
 
-    print("Average R^2 value for RNA reconstruction:", average_r2.mean(dim=0))
+    print("Average R^2 value for RNA reconstruction:", average_pcc.mean(dim=0))
     # shared_dict['all_r2'][fold] = average_r2.mean(dim=0).item()
-    rna_metric = [fold, ARI, AMI, NMI, HOM, average_r2.mean(dim=0).item()]
+    rna_metric = [fold, ARI, AMI, NMI, HOM, average_pcc.mean(dim=0).item()]
 
     sc.tl.umap(gex_data_recon)
-    sc.pl.umap(gex_data_recon, color="cell_type", show=False)
+    sc.pl.umap(gex_data_recon, color=cell_key, show=False)
     if not os.path.exists(f'figures/{dataset_name}/'):
         os.makedirs(f'figures/{dataset_name}/')
-    plt.savefig(f'figures/{dataset_name}/tsne_rna_recon_cell_type_{fold}.pdf', dpi=600, bbox_inches='tight')
-
-    # sc.pl.tsne(gex_data_recon, color="batch", show=False)
-    # plt.savefig(f'figures/{dataset_name}/tsne_rna_recon_batch_{fold}.pdf', dpi=600, bbox_inches='tight')
+    plt.savefig(f'figures/{dataset_name}/umap_rna_recon_cell_type_{training_mode}_{fold}.pdf', dpi=600, bbox_inches='tight')
 
     sc.pp.pca(atac_data_recon)
     sc.pp.neighbors(atac_data_recon, use_rep='X')
     sc.tl.leiden(atac_data_recon)
-    # sc.tl.louvain(gex_data)
 
-    ARI = metrics.adjusted_rand_score(atac_data_recon.obs['cell_type'], atac_data_recon.obs['leiden'])
-    AMI = metrics.adjusted_mutual_info_score(atac_data_recon.obs['cell_type'], atac_data_recon.obs['leiden'])
-    NMI = metrics.normalized_mutual_info_score(atac_data_recon.obs['cell_type'], atac_data_recon.obs['leiden'])
-    HOM = metrics.homogeneity_score(atac_data_recon.obs['cell_type'], atac_data_recon.obs['leiden'])
+    ARI = metrics.adjusted_rand_score(atac_data_recon.obs[cell_key], atac_data_recon.obs['leiden'])
+    AMI = metrics.adjusted_mutual_info_score(atac_data_recon.obs[cell_key], atac_data_recon.obs['leiden'])
+    NMI = metrics.normalized_mutual_info_score(atac_data_recon.obs[cell_key], atac_data_recon.obs['leiden'])
+    HOM = metrics.homogeneity_score(atac_data_recon.obs[cell_key], atac_data_recon.obs['leiden'])
 
     atac_metric = [fold, ARI, AMI, NMI, HOM]
 
@@ -462,10 +406,8 @@ def scDM_training(fold: int, device_id: int):
     # shared_dict['all_atac_HOM'][fold] = HOM
 
     sc.tl.umap(atac_data_recon)
-    sc.pl.umap(atac_data_recon, color="cell_type", show=False)
-    plt.savefig(f'figures/{dataset_name}/tsne_atac_recon_cell_type_{fold}.pdf', dpi=600, bbox_inches='tight')
-    # sc.pl.tsne(atac_data_recon, color="batch", show=False)
-    # plt.savefig(f'figures/{dataset_name}/tsne_atac_recon_batch_{fold}.pdf', dpi=600, bbox_inches='tight')
+    sc.pl.umap(atac_data_recon, color=cell_key, show=False)
+    plt.savefig(f'figures/{dataset_name}/umap_atac_recon_cell_type_{training_mode}_{fold}.pdf', dpi=1000, bbox_inches='tight')
 
     return rna_metric, atac_metric
 
@@ -496,7 +438,7 @@ def multiprocessing_train_fold(folds, function, func_args_list):
 
 
 all_fold = [f'fold{fold}' for fold in range(1, 6)]
-device_list = [4, 6, 6, 3, 7]
+device_list = [7, 2, 7, 2, 7]
 
 manager = mp.Manager()
 process_shared_dict = manager.dict()
@@ -505,7 +447,7 @@ process_shared_dict['all_ARI'] = [0 for _ in range(5)]
 process_shared_dict['all_NMI'] = [0 for _ in range(5)]
 process_shared_dict['all_HOM'] = [0 for _ in range(5)]
 process_shared_dict['all_AMI'] = [0 for _ in range(5)]
-process_shared_dict['all_r2'] = [0 for _ in range(5)]
+process_shared_dict['all_pcc'] = [0 for _ in range(5)]
 process_shared_dict['all_atac_ARI'] = [0 for _ in range(5)]
 process_shared_dict['all_atac_NMI'] = [0 for _ in range(5)]
 process_shared_dict['all_atac_HOM'] = [0 for _ in range(5)]
@@ -528,13 +470,13 @@ for result in results:
 #
 df_rna_metric = pd.DataFrame(all_rna_metric)
 # df_rna_metric = df_rna_metric.T
-df_rna_metric.columns = ['fold', 'ARI', 'AMI', 'NMI', 'HOM', 'r2']
+df_rna_metric.columns = ['fold', 'ARI', 'AMI', 'NMI', 'HOM', 'pcc']
 df_rna_metric.sort_values(by='fold', inplace=True)
-df_rna_metric.to_csv(f'metric_performance/all_{dataset_name}_rna_metrics.csv', index=False)
+df_rna_metric.to_csv(f'metric_performance/all_{dataset_name}_{training_mode}_rna_metrics.csv', index=False)
 
 df_atac_metric = pd.DataFrame(all_atac_metric)
 # df_atac_metric = df_atac_metric.T
 df_atac_metric.columns = ['fold', 'ARI', 'AMI', 'NMI', 'HOM']
 df_atac_metric.sort_values(by='fold', inplace=True)
-df_atac_metric.to_csv(f'metric_performance/all_{dataset_name}_atac_metrics.csv', index=False)
+df_atac_metric.to_csv(f'metric_performance/all_{dataset_name}_{training_mode}_atac_metrics.csv', index=False)
 

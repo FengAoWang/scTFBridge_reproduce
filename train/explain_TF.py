@@ -1,28 +1,15 @@
 import os.path
 import torch
 import torch.nn.functional as F
-import shap
-import sys
-sys.path.append('/home/wfa/project/single_cell_multimodal')
-from sklearn.cluster import KMeans
-from model.scTFBridge import scMulti, explainModelLatentZ, explainModelLatentTF
+from model.scTFBridge import scTFBridge, explainModelLatentZ
 import anndata
-import scanpy as sc
-from sklearn.model_selection import KFold
-from sklearn.model_selection import StratifiedKFold
-import episcanpy.api as epi
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from dataset.dataset import scMultiDataset
 from torch.utils.data import DataLoader
 import ast
-import shap
-from captum.attr import DeepLiftShap, IntegratedGradients
-import hotspot
-import matplotlib.pyplot as plt
 import time
-from sklearn.feature_selection import mutual_info_classif
 from model.pathexplainer import PathExplainerTorch
 import random
 import torch.multiprocessing as mp
@@ -42,11 +29,20 @@ def set_seed(seed):
     torch.set_float32_matmul_precision('high')
 
 
-set_seed(3407)
+set_seed(666)
 # loading GEX ATAC adata
+# dataset_name = 'human_PBMC'
 dataset_name = 'human_PBMC'
+cell_key = 'cell_type'
+training_mode = 'no_hsic_loss_commonTG'
+
 print(dataset_name)
+common_TG = pd.read_csv('/data2/ycx/LINGER/data/TG/common_TG_new.csv')['TG'].values.tolist()
+# print('common TG', common_TG)
+
 gex_data = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/RNA_filter.h5ad')
+# gex_data = gex_data[:, gex_data.var_names.isin(common_TG)]
+
 atac_adata = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/ATAC_filter.h5ad')
 TF_adata = anndata.read_h5ad(f'../data/filter_data/{dataset_name}/TF_filter.h5ad')
 
@@ -54,7 +50,7 @@ TF_length = TF_adata.var.shape[0]
 
 
 fold_split_info = pd.read_csv(f'../data/filter_data/{dataset_name}/fold_split_info.csv')
-mask = pd.read_csv(f'../data/{dataset_name}_TF_Binding/TF_binding.txt', sep='\t', header=None).values
+mask = pd.read_csv(f'../data/filter_data/{dataset_name}/TF_binding/TF_binding.txt', sep='\t', header=None).values
 
 
 if 'batch' in gex_data.obs.columns:
@@ -125,42 +121,46 @@ def get_latent_z(model, dataloader, modal, num_samples=4):
     share_embedding, private_embedding, sample_batch = [], [], []
     input = []
     with tqdm(dataloader, unit='batch') as tepoch:
-        for batch, data in enumerate(tepoch):
-            rna_data, atac_data, TF_data, batch_id = data
-            rna_data = rna_data.cuda()
-            atac_data = atac_data.cuda()
-            TF_data = TF_data.cuda()
-            batch_id = batch_id.cuda()
+        with torch.no_grad():
+            for batch, data in enumerate(tepoch):
+                rna_data, atac_data, TF_data, batch_id = data
+                rna_data = rna_data.cuda()
+                atac_data = atac_data.cuda()
+                TF_data = TF_data.cuda()
+                batch_id = batch_id.cuda()
 
-            output = model([rna_data, atac_data, TF_data], batch_id)
+                output = model([rna_data, atac_data, TF_data], batch_id)
 
-            share_embedding.append(output[f'share_embedding'])
-            private_embedding.append(output[f'{modal}_private_embedding'])
-            sample_batch.append(batch_id)
-            if modal == 'rna':
-                input.append(rna_data)
-            else:
-                input.append(atac_data)
+                share_embedding.append(output[f'share_embedding'])
+                private_embedding.append(output[f'{modal}_private_embedding'])
+                sample_batch.append(batch_id)
+                if modal == 'RNA':
+                    input.append(rna_data)
+                else:
+                    input.append(atac_data)
 
-            if len(share_embedding) * atac_data.shape[0] >= num_samples:
-                break
+                if len(share_embedding) * atac_data.shape[0] >= num_samples:
+                    break
 
-        share_data = torch.cat(share_embedding, dim=0)
-        private_data = torch.cat(private_embedding, dim=0)
-        batch_id = torch.cat(sample_batch, dim=0)
-        all_data = torch.cat((share_data, private_data, batch_id), dim=1)
-        rna_input = torch.cat(input, dim=0)
-        # all_data = torch.cat((all_data, rna_input), dim=1).cuda()
-        return all_data, rna_input
+            share_data = torch.cat(share_embedding, dim=0)
+            private_data = torch.cat(private_embedding, dim=0)
+            batch_id = torch.cat(sample_batch, dim=0)
+            all_data = torch.cat((share_data, private_data, batch_id), dim=1)
+            rna_input = torch.cat(input, dim=0)
+            # all_data = torch.cat((all_data, rna_input), dim=1).cuda()
+            return all_data, rna_input
 
 
 def compute_TF_value(fold, device_id, cell_type):
     torch.cuda.set_device(device_id)
     mask_tensor = torch.tensor(mask).float()
 
-    sc_multi_demo = scMulti([dim1, dim2], [1024], [1024],
-                            128, 1, ['gaussian', 'bernoulli'], batch_dims, 1, mask_tensor)
-    model_dict = torch.load(f'model_dict/sc_multi_{dataset_name}_fold{fold}.pt', map_location='cpu')
+    sc_multi_demo = scTFBridge([dim1, dim2], [1024], [1024],
+                               128, 1, ['gaussian', 'bernoulli'], batch_dims, 1, 1, mask_tensor)
+    print(dim1, dim2)
+    model_dict = torch.load(f'model_dict/sc_multi_{dataset_name}_{training_mode}_fold{fold}.pt', map_location='cpu')
+    # model_dict = torch.load(f'model_dict/sc_multi_all_data_{dataset_name}_{training_mode}_1.0.pt', map_location='cpu')
+
     sc_multi_demo.load_state_dict(model_dict)
     sc_multi_demo.cuda()
     sc_multi_demo.eval()
@@ -174,19 +174,18 @@ def compute_TF_value(fold, device_id, cell_type):
     validation_TF_adata = TF_adata[id_list[fold][1]].copy()
     test_TF_adata = TF_adata[id_list[fold][2]].copy()
 
-
     if cell_type != 'cellular':
         print(cell_type)
-        train_gex_adata = train_gex_adata[train_gex_adata.obs['cell_type'] == cell_type]
-        test_gex_adata = test_gex_adata[test_gex_adata.obs['cell_type'] == cell_type]
+        train_gex_adata = train_gex_adata[train_gex_adata.obs[cell_key] == cell_type]
+        test_gex_adata = test_gex_adata[test_gex_adata.obs[cell_key] == cell_type]
 
     train_atac_adata = atac_adata[id_list[fold][0]].copy()
     validation_atac_adata = atac_adata[id_list[fold][1]].copy()
     test_atac_adata = atac_adata[id_list[fold][2]].copy()
     if cell_type != 'cellular':
         print(cell_type)
-        train_atac_adata = train_atac_adata[train_atac_adata.obs['cell_type'] == cell_type]
-        test_atac_adata = test_atac_adata[test_atac_adata.obs['cell_type'] == cell_type]
+        train_atac_adata = train_atac_adata[train_atac_adata.obs[cell_key] == cell_type]
+        test_atac_adata = test_atac_adata[test_atac_adata.obs[cell_key] == cell_type]
 
 
     train_batch_info = one_hot_encoded_batches.iloc[id_list[fold][0]]
@@ -210,11 +209,12 @@ def compute_TF_value(fold, device_id, cell_type):
     test_sc_dataset = scMultiDataset([test_gex_data_np, test_atac_data_np, test_TF_adata_np], test_batch_info)
 
     sc_train_dataloader = DataLoader(sc_dataset, batch_size=5, shuffle=True, num_workers=8, pin_memory=True)
-    sc_test_dataloader = DataLoader(test_sc_dataset, batch_size=5, shuffle=False, num_workers=8, pin_memory=True)
+    sc_test_dataloader = DataLoader(test_sc_dataset, batch_size=5, shuffle=True, num_workers=8, pin_memory=True)
 
-    train_latent_z, train_rna = get_latent_z(sc_multi_demo, sc_train_dataloader, num_samples=20, modal='rna')
+    train_latent_z, train_rna = get_latent_z(sc_multi_demo, sc_train_dataloader, num_samples=20, modal='RNA')
     baseline_latent_z = torch.zeros_like(train_latent_z)
-    test_latent_z, test_rna = get_latent_z(sc_multi_demo, sc_test_dataloader, num_samples=300, modal='rna')
+    test_latent_z, test_rna = get_latent_z(sc_multi_demo, sc_train_dataloader, num_samples=50, modal='RNA')
+
     start_time = time.time()
     all_attributions = []
     explain_model = explainModelLatentZ(sc_multi_demo, 'rna', 128, 0)
@@ -223,16 +223,17 @@ def compute_TF_value(fold, device_id, cell_type):
 
     for dim in range(dim1):
         explain_model.dimension_num = dim
-
-
         def model_loss_wrapper(z):
             rna_recon = explain_model(z)
+            # return rna_recon
             return F.mse_loss(rna_recon, test_rna[:, [dim]], reduction='none').mean(1).view(-1, 1)
-
 
         explainer = PathExplainerTorch(model_loss_wrapper)
 
-        baseline_data = train_latent_z[0, :]  # define a baseline, in this case the zeros vector
+        baseline_data = test_latent_z[np.random.choice(test_latent_z.shape[0], 10, replace=False), :]
+
+        # define a baseline, in this case the zeros vector
+        baseline_data = test_latent_z[0, :]
         baseline_data = torch.zeros_like(baseline_data)
         baseline_data.requires_grad = True
         attributions = explainer.attributions(test_latent_z,
@@ -263,8 +264,8 @@ def compute_TF_value(fold, device_id, cell_type):
     mean_shap_values = np.mean(np.abs(shap_values), axis=1)
     if not os.path.exists(f'TF_shap/{dataset_name}'):
         os.makedirs(f'TF_shap/{dataset_name}')
-    np.save(f'TF_shap/{dataset_name}/{cell_type}_TF_shap_value_fold{fold}_v2.npy', mean_shap_values)
-    np.save(f'TF_shap/{dataset_name}/{cell_type}_all_sample_TF_shap_value_fold{fold}.npy', shap_values)
+    np.save(f'TF_shap/{dataset_name}/{cell_type}_{training_mode}_TF_shap_value_fold{fold}_v2_{training_mode}.npy', mean_shap_values)
+    np.save(f'TF_shap/{dataset_name}/{cell_type}_{training_mode}_all_sample_TF_shap_value_fold{fold}.npy', shap_values)
     print(mean_shap_values.shape)
 
     # shap_share = shap_values[:, :128]
@@ -297,10 +298,13 @@ def multiprocessing_train_fold(folds, function, func_args_list):
         p.join()
 
 
-cell_list = gex_data.obs['cell_type'].unique().tolist()
+# cell_list = gex_data.obs['cell_type'].unique().tolist()
+cell_list = ['CD14 Mono', 'CD4 Naive', 'Naive B']
+# cell_list = [0]
+
 print(cell_list)
 for cell in cell_list:
-    device_id_list = [3, 6, 5, 0, 1]
+    device_id_list = [2, 6, 6, 7, 7]
     functions = [(fold, device_id_list[fold], cell) for fold in range(5)]
 
     multiprocessing_train_fold(5, compute_TF_value, functions)

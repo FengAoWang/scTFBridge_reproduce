@@ -6,9 +6,9 @@ import torch.nn as nn
 
 def KL_loss(mu, logvar, beta):
     # KL divergence loss
-    KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-
-    return beta * KLD.cuda()
+    device = mu.device
+    KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp()).to(device)
+    return beta * KLD
 
 
 def GEOAE_loss(mu, log_var, beta):
@@ -18,12 +18,15 @@ def GEOAE_loss(mu, log_var, beta):
 
 def Reconstruction_loss(recon_x, x, recon_param, dist):
     batch_size = x.size(0)
+    feature_dim = x.size(1)
     if dist == 'bernoulli':
         BCE = nn.BCEWithLogitsLoss(reduction='sum')
-        recons_loss = BCE(recon_x, x) / batch_size
+        recons_loss = BCE(recon_x, x)
+
     elif dist == 'gaussian':
         mse = nn.MSELoss(reduction='sum')
-        recons_loss = mse(recon_x, x)
+        recons_loss = mse(recon_x, x) / batch_size
+
     elif dist == 'F2norm':
         recons_loss = torch.norm(recon_x-x, p=2)
     elif dist == 'prob':
@@ -39,22 +42,3 @@ def Reconstruction_loss(recon_x, x, recon_param, dist):
         raise AttributeError("invalid dist")
 
     return recon_param * recons_loss
-
-
-def cox_loss(survtime, censor, hazard_pred):
-    current_batch_len = len(survtime)
-
-    R_mat = np.zeros([current_batch_len, current_batch_len], dtype=int)
-    for i in range(current_batch_len):
-        for j in range(current_batch_len):
-            R_mat[i, j] = survtime[j] >= survtime[i]
-
-    R_mat = torch.FloatTensor(R_mat).cuda()
-    theta = hazard_pred.reshape(-1)
-    exp_theta = torch.exp(theta)
-    loss_cox = -torch.mean((theta - torch.log(torch.sum(exp_theta*R_mat, dim=1))) * censor)
-    return loss_cox
-
-
-
-
