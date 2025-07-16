@@ -177,7 +177,7 @@ def scDM_training(fold: int, device_id: int):
     print(sc_dataset[0][0], sc_dataset[0][1])
     print(sc_dataset[0][0].shape, sc_dataset[0][1].shape)
 
-    sc_dataloader = DataLoader(sc_dataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=True)
+    sc_dataloader = DataLoader(sc_dataset, batch_size=128, shuffle=True, num_workers=8, pin_memory=True)
     val_dataloader = DataLoader(val_sc_dataset, batch_size=512, shuffle=False, num_workers=8, pin_memory=True)
     test_dataloader = DataLoader(test_sc_dataset, batch_size=512, shuffle=False, num_workers=8, pin_memory=True)
 
@@ -186,7 +186,7 @@ def scDM_training(fold: int, device_id: int):
     TF_dim = TF_adata.X.shape[1]
 
     mask_tensor = torch.tensor(mask).float()
-    one_mask_tensor = torch.ones_like(mask_tensor)
+    # one_mask_tensor = torch.ones_like(mask_tensor)
 
     # mask_tensor_ = torch.ones_like(mask_tensor)
     # 计算最小值和最大值
@@ -197,7 +197,7 @@ def scDM_training(fold: int, device_id: int):
     normalized_mask_tensor = (mask_tensor - min_val) / (max_val - min_val)
 
     sc_multi_demo = scTFBridge([dim1, dim2], [1024], [1024],
-                               TF_dim, 0.1, ['gaussian', 'bernoulli'], batch_dims, 1, 1, one_mask_tensor)
+                               TF_dim, 1, ['gaussian', 'bernoulli'], batch_dims, 1, 1, mask_tensor)
 
     epochs = 150
     best_val_loss = float('inf')

@@ -21,11 +21,11 @@ def Reconstruction_loss(recon_x, x, recon_param, dist):
     feature_dim = x.size(1)
     if dist == 'bernoulli':
         BCE = nn.BCEWithLogitsLoss(reduction='sum')
-        recons_loss = BCE(recon_x, x)
+        recons_loss = BCE(recon_x, x) / batch_size
 
     elif dist == 'gaussian':
         mse = nn.MSELoss(reduction='sum')
-        recons_loss = mse(recon_x, x) / batch_size
+        recons_loss = mse(recon_x, x)
 
     elif dist == 'F2norm':
         recons_loss = torch.norm(recon_x-x, p=2)

@@ -34,7 +34,7 @@ set_seed(666)
 # dataset_name = 'human_PBMC'
 dataset_name = 'human_PBMC'
 cell_key = 'cell_type'
-training_mode = 'no_hsic_loss_commonTG'
+training_mode = 'no_prior_strain'
 
 print(dataset_name)
 common_TG = pd.read_csv('/data2/ycx/LINGER/data/TG/common_TG_new.csv')['TG'].values.tolist()
@@ -213,7 +213,7 @@ def compute_TF_value(fold, device_id, cell_type):
 
     train_latent_z, train_rna = get_latent_z(sc_multi_demo, sc_train_dataloader, num_samples=20, modal='RNA')
     baseline_latent_z = torch.zeros_like(train_latent_z)
-    test_latent_z, test_rna = get_latent_z(sc_multi_demo, sc_train_dataloader, num_samples=50, modal='RNA')
+    test_latent_z, test_rna = get_latent_z(sc_multi_demo, sc_train_dataloader, num_samples=100, modal='RNA')
 
     start_time = time.time()
     all_attributions = []
@@ -238,7 +238,7 @@ def compute_TF_value(fold, device_id, cell_type):
         baseline_data.requires_grad = True
         attributions = explainer.attributions(test_latent_z,
                                               baseline=baseline_data,
-                                              num_samples=50,
+                                              num_samples=100,
                                               use_expectation=False)
         # 将attributions合并到all_attributions
         attributions = attributions.cpu().detach()

@@ -803,7 +803,7 @@ class scTFBridge(nn.Module):
                 (rna_cross_recon_loss + atac_cross_recon_loss) +
                 self.kl_weight * (share_kl_loss + rna_kl_loss + atac_kl_loss) +
                 self.con_weight * (contrastive_loss + multimodal_contrastive_loss) +
-                self.con_weight * (PIB_mi + PIB_mimin)
+                self.mi_weight * (PIB_mi + PIB_mimin)
                 # + hsic_loss
         )
         return loss
