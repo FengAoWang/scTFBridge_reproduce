@@ -2,6 +2,9 @@
 
 **scTFBridge: A Disentangled Deep Generative Model Informed by TF-Motif Binding for Gene Regulation Inference in Single-Cell Multi-Omics**
 
+**IMPORTANT NOTE**: This repository is dedicated to reproducing the analyses presented in the original publication. For a user-friendly and streamlined application of the scTFBridge model on your own data, please visit the main project repository: [**FengAoWang/scTFBridge**](https://github.com/FengAoWang/scTFBridge).
+
+
 scTFBridge is a novel single-cell multi-omics integration method designed for modality disentanglement and gene regulatory network (GRN) inference. It leverages transcription factor (TF)-motif binding information to model complex regulatory relationships in single-cell data, enabling researchers to uncover insights into gene regulation across multiple omics layers.
 
 ![scTFBridge Overview](figure1.png)
@@ -17,7 +20,7 @@ scTFBridge is a novel single-cell multi-omics integration method designed for mo
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.12 or higher
 - CUDA (optional, for GPU acceleration)
 - Required libraries:
   - `torch >= 1.10.0`
@@ -31,11 +34,10 @@ scTFBridge is a novel single-cell multi-omics integration method designed for mo
 To install scTFBridge from source, follow these steps:
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/scTFBridge.git
+git clone https://github.com/your-username/scTFBridge_reproduce.git
 
 # install with pip
-Note: PyPI package coming soon. Stay tuned for updates
-
+pip install sctfbridge
 ```
 
 
@@ -136,7 +138,7 @@ explain_model.cuda()
 ```
 The more details can be found at train/explain_TF.py
 ## Tutorials
-Tutorials will be available soon.
+Tutorials are available at .
 
 
 
