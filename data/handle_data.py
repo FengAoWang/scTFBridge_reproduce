@@ -1,7 +1,6 @@
+from utils.data_processing import preload_TF_binding
 
-from utils.data_processing import load_TFbinding, extract_overlap_regions, preload_TF_binding
-
-dataset_name = 'human_PBMC'
+dataset_name = 'PBMC'
 #
 
 GRNdir = 'GRN/data_bulk/'
